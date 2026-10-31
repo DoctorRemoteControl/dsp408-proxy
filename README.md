@@ -1,410 +1,120 @@
-# DSP408 Decoder Proxy
+# DSP408 TCP proxy
 
-Build with `mvn verify` from the [DSP408 workspace](../README.md), or install
-`../dsp408-protocol` locally before building this project alone. Framing is shared
-with Raider and the controller; the shaded JAR still runs independently.
+The proxy forwards traffic between DSP clients and the device, logs frames and
+optionally provides a passive event stream and an active control channel.
+It is an independent Java 21/Maven project.
 
-Standalone TCP proxy for the **t.racks / Thomann DSP 408**, with:
+## Build and help
 
-* live traffic capture
-* JSON session logs
-* live stream to another tool
-* optional control port for active sending to the DSP
-
----
-
-## Features
-
-* forwards traffic between **Track DSP** and **DSP408**
-* splits DSP frames and stores them as a session log
-* streams frames live as **NDJSON over TCP**
-* can inject frames or payloads into the DSP via a **control port**
-* includes a small session analyzer for recorded logs
-
----
-
-## Project Structure
-
-* `proxy.server`
-  main TCP proxy, session management, logging
-
-* `proxy.stream`
-  live stream sink, e.g. NDJSON over TCP
-
-* `proxy.control`
-  JSON control server for sending frames/payloads
-
-* `proxy.analysis`
-  analysis of recorded sessions
-
-* `proxy.core`
-  frame codec, hex helpers, base functions
-
----
-
-## Requirements
-
-* Java 21
-* Maven 3.9+
-
-Check:
+From the [DSP408 workspace](../README.md):
 
 ```bash
-java -version
-mvn -version
+mvn -B -ntp verify
 ```
 
----
-
-## Build
-
-Important: run Maven **in the project folder**, i.e. where the `pom.xml` is.
+For an individual build, install `../dsp408-protocol` locally first, then run
+`mvn -B -ntp verify` in the proxy project. From `tracks-dsp-proxy`:
 
 ```bash
-cd C:\Users\XLA\DSP408\DSP408DecoderProxy
-mvn clean package
+java -jar target/dsp408-proxy-0.1.0-SNAPSHOT-all.jar --help
 ```
 
-Artifact:
+## Start for Raider
 
-```text
-target\dsp408-proxy-0.1.0-SNAPSHOT-all.jar
-```
-
----
-
-## Start Without Stream
+Run this command from the proxy project. It starts live access; the IP is the
+local example setup and must be adjusted for a different device:
 
 ```bash
-java -jar target\dsp408-proxy-0.1.0-SNAPSHOT-all.jar ^
-  --listen-host 127.0.0.1 ^
-  --listen-port 9761 ^
-  --target-host 192.168.0.166 ^
-  --target-port 9761 ^
-  --log-dir proxy_logs
+java -jar target/dsp408-proxy-0.1.0-SNAPSHOT-all.jar \
+  --listen-host 127.0.0.1 --listen-port 9761 \
+  --target-host 192.168.0.166 --target-port 9761 \
+  --stream-host 127.0.0.1 --stream-port 19081 \
+  --control-host 127.0.0.1 --control-port 19082 \
+  --log-dir ../../../Betriebsdaten/DSP408/proxy-logs
 ```
 
----
+The log path matches the local `drremote` layout. For a checkout elsewhere,
+choose a suitable path with `--log-dir`. Without this parameter, the program
+defaults to `proxy_logs` relative to the working directory.
 
-## Start With Live Stream
+**Stream and control are enabled only when both host and port are specified
+for each.** They are not automatically included in a default startup.
+Without arguments, an interactive configuration dialog opens.
+
+Keep the terminal open. The proxy accepts `status` and `quit` there; EOF on
+stdin also stops it. Starting it in the background with stdin immediately
+detached therefore does not create a persistent service.
+
+## What does each connection do?
+
+| Example endpoint | Protocol / role | Client |
+| --- | --- | --- |
+| `192.168.0.166:9761` | target device, binary DSP protocol | proxy |
+| `127.0.0.1:9761` | proxy's GUI/DSP client listener | original software or another DSP client |
+| `127.0.0.1:19081` | NDJSON over TCP, passive event stream | Raider `capture` and stream consumers |
+| `127.0.0.1:19082` | JSON lines over TCP, control channel | Raider `connect`/`identify`/`dump`/`apply`, active scripts and tools |
+
+`stream-host` is a **server's local bind address**. The analyzer connects to
+this listener; no receiving server needs to run on the analyzer. Control is
+also a TCP listener, not an HTTP or WebSocket API.
+
+Event fields, control commands and the distinction between proxy responses
+and DSP responses are documented in the [interface reference](PROTOCOL.md).
+Raider's explicit [application workflow](../tracks-dsp-raider/docs/EXECUTION.md)
+checks actual DSP ACKs and readback; a successful proxy control response alone
+is insufficient.
+
+For reads, control can establish or reuse a device session. The GUI does not
+need to run. For GUI captures, the original software must connect through the
+GUI listener. On the same computer, it uses `127.0.0.1:9761`. On another
+computer, it must use a reachable address of the proxy computer; explicitly
+set the required bind address there with `--listen-host`.
+
+## Options
+
+| Option | Default / meaning |
+| --- | --- |
+| `--listen-host` | `127.0.0.1`; GUI listener |
+| `--listen-port` | `9761` |
+| `--target-host` | `192.168.0.166`; alias `--target-ip` |
+| `--target-port` | `9761` |
+| `--log-dir` | `proxy_logs` |
+| `--stream-host`, `--stream-port` | optional pair to enable the stream |
+| `--control-host`, `--control-port` | optional pair to enable control |
+| `--help`, `-h` | help without starting a connection |
+
+## Data and analysis
+
+Both traffic directions use the
+[shared protocol library](../dsp408-protocol/README.md). The declared length
+field determines frame boundaries; `10 03` inside a payload does not terminate
+a frame prematurely. Checksum status is retained in recordings.
+
+Raw logs are source material. Raider interprets gain, mute or delay fields
+using its documented firmware/source mappings. Recording alone does not let
+the proxy confirm a field's meaning.
+
+Saved sessions can be analyzed with the included analysis CLI:
 
 ```bash
-java -jar target\dsp408-proxy-0.1.0-SNAPSHOT-all.jar ^
-  --listen-host 127.0.0.1 ^
-  --listen-port 9761 ^
-  --target-host 192.168.0.166 ^
-  --target-port 9761 ^
-  --log-dir proxy_logs ^
-  --stream-host 127.0.0.1 ^
-  --stream-port 19081
+java -cp target/dsp408-proxy-0.1.0-SNAPSHOT-all.jar com.drremote.dsp408.proxy.cli.ProxyAnalyzeMain proxy_session.json
 ```
 
----
-
-## Start With Live Stream and Control Port
-
-```bash
-java -jar target\dsp408-proxy-0.1.0-SNAPSHOT-all.jar ^
-  --listen-host 127.0.0.1 ^
-  --listen-port 9761 ^
-  --target-host 192.168.0.166 ^
-  --target-port 9761 ^
-  --log-dir proxy_logs ^
-  --stream-host 127.0.0.1 ^
-  --stream-port 19081 ^
-  --control-host 127.0.0.1 ^
-  --control-port 19082
-```
-
----
-
-## Parameter Meaning
-
-* `listen-host` / `listen-port`
-  address the proxy listens on.
-  **Track DSP** connects here.
-
-* `target-host` / `target-port`
-  real DSP408
-
-* `log-dir`
-  directory for session logs
-
-* `stream-host` / `stream-port`
-  destination for live events as NDJSON/TCP
-
-* `control-host` / `control-port`
-  JSON control interface for active sending to the DSP
-
----
-
-## Track DSP Settings
-
-If Track DSP runs on the same PC:
-
-* IP: `127.0.0.1`
-* Port: `9761`
-
-Then Track DSP connects to the proxy, and the proxy forwards to the real DSP.
-
----
-
-## Session Logs
-
-The proxy writes one file per connection to `proxy_logs`, for example:
-
-```text
-proxy_logs\proxy_session_20260403_072138_051.json
-```
-
-The file contains:
-
-* session metadata
-* bytes PC -> DSP
-* bytes DSP -> PC
-* notes
-* all detected frames with payload, ASCII, and validation
-
----
-
-## Live Stream Format
-
-If `--stream-host` and `--stream-port` are set, the proxy sends NDJSON lines to the target system.
-
-Typical events:
-
-### session_started
-
-```json
-{"type":"session_started","sessionId":"20260403_072138_051","startedAt":"2026-04-03T07:21:38.051Z","listenHost":"127.0.0.1","listenPort":9761,"targetHost":"192.168.0.166","targetPort":9761,"clientAddress":"/127.0.0.1:51344"}
-```
-
-### frame
-
-```json
-{"type":"frame","sessionId":"20260403_072138_051","frame":{"index":1,"direction":"PC_TO_DSP","timestampUtc":"2026-04-03T07:21:38.123Z","frameHex":"1002000103...","validFrame":true,"payloadHex":"000103...","payloadPrettyHex":"00 01 03 ...","payloadAscii":"....","payloadLength":12,"note":""}}
-```
-
-### note
-
-```json
-{"type":"note","sessionId":"20260403_072138_051","note":"PC_TO_DSP error: Connection reset"}
-```
-
-### session_ended
-
-```json
-{"type":"session_ended","sessionId":"20260403_072138_051","endedAt":"2026-04-03T07:22:01.000Z","bytesPcToDsp":1234,"bytesDspToPc":5678,"frameCount":42,"droppedEvents":0}
-```
-
----
-
-## Control Port
-
-If the control port is enabled, another tool can send JSON lines to the proxy.
-
-Connection:
-
-* Host: `127.0.0.1`
-* Port: `19082`
-
-Each request is **one JSON line**.
-
----
-
-## Control Commands
-
-### Query status
-
-Request:
-
-```json
-{"type":"status"}
-```
-
-Response:
-
-```json
-{"ok":true,"sessionActive":true}
-```
-
----
-
-### Send full frame
-
-Request:
-
-```json
-{"type":"send_frame","frameHex":"10020001021003AA"}
-```
-
-Response:
-
-```json
-{"ok":true,"sessionActive":true,"message":"Frame injected"}
-```
-
----
-
-### Send payload only
-
-The proxy automatically wraps it into a DSP frame with checksum.
-
-Request:
-
-```json
-{"type":"send_payload","payloadHex":"00010312"}
-```
-
-Response:
-
-```json
-{"ok":true,"sessionActive":true,"message":"Payload injected as frame"}
-```
-
----
-
-## Important Notes for Sending
-
-* sending only works if **an active proxy session** exists
-* so: first **connect Track DSP through the proxy**
-* then inject via the control port
-* `send_payload` is usually more convenient than `send_frame`
-* for unknown commands, always capture and analyze first
-
----
-
-## Example: Test With Netcat
-
-### Check status
-
-```bash
-echo {"type":"status"} | nc 127.0.0.1 19082
-```
-
-### Send payload
-
-```bash
-echo {"type":"send_payload","payloadHex":"00010312"} | nc 127.0.0.1 19082
-```
-
-On Windows, you can also use a small Python, Node, or Java tool.
-
----
-
-## Analyze a Stored Session
-
-```bash
-java -cp target\dsp408-proxy-0.1.0-SNAPSHOT-all.jar com.drremote.dsp408.proxy.cli.ProxyAnalyzeMain proxy_logs\proxy_session_20260403_072138_051.json
-```
-
-Output:
-
-* frame count
-* valid frames
-* reads / writes
-* detected write candidates
-* first mapping hints for gain values
-
----
-
-## Typical Workflow
-
-### Capture only
-
-1. start proxy
-2. change Track DSP to proxy IP/port
-3. perform actions in Track DSP
-4. analyze the session log
-
-### Stream to another tool
-
-1. start receiver on `127.0.0.1:19081`
-2. start proxy with `--stream-host` / `--stream-port`
-3. connect Track DSP
-4. analyze live events in the target tool
-
-### Actively send and control
-
-1. start proxy with `--control-host` / `--control-port`
-2. connect Track DSP through the proxy
-3. send `status`, `send_frame` or `send_payload` via the control port
-
----
-
-## Known Limits
-
-* currently only **one active client session**
-* no authentication on the control port
-* no replay queue across sessions
-* no REST API, only TCP + JSON lines
-* wrong payloads can affect the DSP unexpectedly
-
----
-
-## Recommendation
-
-For reverse engineering, this split is sensible:
-
-* **Proxy** = stable capture + forwarding
-* **Stream consumer** = decoding / analysis / UI
-* **Control client** = targeted sending of test commands
-
-This keeps the proxy small, robust, and neutral.
-
----
+Replace `proxy_session.json` with the path to a saved session file. Without an
+argument, this analysis program displays its usage; it does not recognize
+`--help` as a separate option.
 
 ## Troubleshooting
 
-### Maven cannot find pom.xml
+| Observation | Check |
+| --- | --- |
+| Raider cannot reach stream/control | Both host/port pairs set at startup? Correct endpoint? Proxy still active? |
+| No events in capture | Stream connection active, but possibly no traffic during the window; GUI actions require the GUI to connect through the proxy |
+| DSP unreachable | Target IP/port and existing device session; a running listener does not prove a device connection |
+| GUI works but Raider does not | GUI listener 9761 is separate from stream 19081 and control 19082 |
+| Proxy exits after startup | stdin closed? The interactive program needs an open terminal |
+| Maven cannot find the library | Use the workspace build or install `dsp408-protocol` locally first |
 
-Wrong folder. You must change into the project root:
-
-```bash
-cd C:\Users\XLA\DSP408\DSP408DecoderProxy
-mvn clean package
-```
-
-### No connection to the DSP
-
-* check `target-host` / `target-port`
-* is the DSP reachable?
-* did you really switch Track DSP to the proxy IP?
-* check firewall
-
-### Control does not send
-
-* is there an active session?
-* is the control port enabled?
-* is `payloadHex` / `frameHex` valid hex?
-
-### Stream does not arrive
-
-* is the receiver running on `stream-host:stream-port`?
-* is a firewall blocking it?
-* does the target tool really expect NDJSON over TCP?
-
----
-
-## Full Start Example
-
-```bash
-cd C:\Users\XLA\DSP408\DSP408DecoderProxy
-mvn clean package
-
-java -jar target\dsp408-proxy-0.1.0-SNAPSHOT-all.jar ^
-  --listen-host 127.0.0.1 ^
-  --listen-port 9761 ^
-  --target-host 192.168.0.166 ^
-  --target-port 9761 ^
-  --log-dir proxy_logs ^
-  --stream-host 127.0.0.1 ^
-  --stream-port 19081 ^
-  --control-host 127.0.0.1 ^
-  --control-port 19082
-```
-
-Then in Track DSP:
-
-* IP: `127.0.0.1`
-* Port: `9761`
+[Raider workflows](../tracks-dsp-raider/docs/WORKFLOWS.md) describe subsequent
+recording and offline analysis. [Architecture](../ARCHITECTURE.md) shows the
+separation between framing, transport and the parameter model.
