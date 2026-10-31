@@ -1,12 +1,14 @@
 # DSP408 TCP proxy
 
+[![Verify](https://github.com/DoctorRemoteControl/dsp408-proxy/actions/workflows/verify.yml/badge.svg)](https://github.com/DoctorRemoteControl/dsp408-proxy/actions/workflows/verify.yml)
+
 The proxy forwards traffic between DSP clients and the device, logs frames and
 optionally provides a passive event stream and an active control channel.
 It is an independent Java 21/Maven project.
 
 ## Build and help
 
-From the [DSP408 workspace](../README.md):
+From the [multi-project build instructions](https://github.com/DoctorRemoteControl/dsp-raider/blob/main/docs/DEVELOPMENT.md#building):
 
 ```bash
 mvn -B -ntp verify
@@ -21,30 +23,29 @@ bash ci/verify.sh
 
 The script installs the shared library locally, then verifies the proxy.
 Set `DSP408_PROTOCOL_DIR` for another source location. For the same library
-source as the draft hosted build, use the exact commit recorded in
+source as the hosted build, use the exact commit recorded in
 [`ci/protocol-revision`](ci/protocol-revision). Then display help:
 
 ```bash
 java -jar target/dsp408-proxy-0.1.0-SNAPSHOT-all.jar --help
 ```
 
-## Automated verification draft
+## Automated verification
 
-The [draft GitHub Actions workflow](.github/workflows/verify.yml) prepares
+The [GitHub Actions workflow](.github/workflows/verify.yml) prepares
 verification on pushes, pull requests and manual runs. It checks out
 `DoctorRemoteControl/dsp408-protocol` at the full commit SHA recorded in
 `ci/protocol-revision`, validates the SHA format and runs `ci/verify.sh` with
 Java 21 and a fresh temporary Maven repository. The actions themselves are
 pinned to full commits; no dependency cache or physical DSP is used.
 
-The planned source repository is `DoctorRemoteControl/dsp408-proxy`.
-Publication of both repositories, availability of the locked protocol commit
-and the first hosted run are still pending. A proxy clone alone does not
+Source repository: [DoctorRemoteControl/dsp408-proxy](https://github.com/DoctorRemoteControl/dsp408-proxy).
+[GitHub Actions](https://github.com/DoctorRemoteControl/dsp408-proxy/actions/workflows/verify.yml)
+records the result for each published revision. A proxy clone alone does not
 include the protocol source or its Maven artifact. The workflow currently
 assumes readable protocol source without an additional secret; private
 cross-repository access needs separate authentication configuration. No Maven
-package is currently published here. Repository visibility and a license
-remain owner decisions.
+package is currently published here. No license file has been selected.
 
 After a reviewed protocol update, publish its source commit and update
 `ci/protocol-revision` to that exact full SHA before verifying the consumer.
@@ -92,7 +93,7 @@ also a TCP listener, not an HTTP or WebSocket API.
 
 Event fields, control commands and the distinction between proxy responses
 and DSP responses are documented in the [interface reference](PROTOCOL.md).
-Raider's explicit [application workflow](../tracks-dsp-raider/docs/EXECUTION.md)
+Raider's explicit [application workflow](https://github.com/DoctorRemoteControl/dsp-raider/blob/main/docs/EXECUTION.md)
 checks actual DSP ACKs and readback; a successful proxy control response alone
 is insufficient.
 
@@ -118,7 +119,7 @@ set the required bind address there with `--listen-host`.
 ## Data and analysis
 
 Both traffic directions use the
-[shared protocol library](../dsp408-protocol/README.md). The declared length
+[shared protocol library](https://github.com/DoctorRemoteControl/dsp408-protocol). The declared length
 field determines frame boundaries; `10 03` inside a payload does not terminate
 a frame prematurely. Checksum status is retained in recordings.
 
@@ -147,6 +148,6 @@ argument, this analysis program displays its usage; it does not recognize
 | Proxy exits after startup | stdin closed? The interactive program needs an open terminal |
 | Maven cannot find the library | Use the workspace build or install `dsp408-protocol` locally first |
 
-[Raider workflows](../tracks-dsp-raider/docs/WORKFLOWS.md) describe subsequent
-recording and offline analysis. [Architecture](../ARCHITECTURE.md) shows the
+[Raider workflows](https://github.com/DoctorRemoteControl/dsp-raider/blob/main/docs/WORKFLOWS.md) describe subsequent
+recording and offline analysis. [Architecture](https://github.com/DoctorRemoteControl/dsp-raider/blob/main/docs/ARCHITECTURE.md) shows the
 separation between framing, transport and the parameter model.

@@ -1,7 +1,7 @@
 # Stream and control protocol
 
 [Start the proxy](README.md#start-for-raider) ·
-[Raider CLI](../tracks-dsp-raider/docs/CLI.md)
+[Raider CLI](https://github.com/DoctorRemoteControl/dsp-raider/blob/main/docs/CLI.md)
 
 Both interfaces are TCP servers provided by the proxy. Each JSON object is
 transmitted as one UTF-8 line with a trailing newline. Ports 19081 and 19082
@@ -71,7 +71,7 @@ proves neither a DSP ACK nor the actual target value. DSP responses appear in
 the event stream; Raider correlates them with the observed outgoing frame and,
 where applicable, the expected command. A transaction window is not a
 multi-parameter device transaction with rollback. Raider's explicit
-[`apply` workflow](../tracks-dsp-raider/docs/EXECUTION.md) validates an actual DSP
+[`apply` workflow](https://github.com/DoctorRemoteControl/dsp-raider/blob/main/docs/EXECUTION.md) validates an actual DSP
 ACK and full-snapshot target readback per write; it stops on failure without
 retry or rollback.
 
