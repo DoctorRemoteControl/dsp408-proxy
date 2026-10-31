@@ -12,12 +12,44 @@ From the [DSP408 workspace](../README.md):
 mvn -B -ntp verify
 ```
 
-For an individual build, install `../dsp408-protocol` locally first, then run
-`mvn -B -ntp verify` in the proxy project. From `tracks-dsp-proxy`:
+For an individual build, provide the independent `dsp408-protocol` source
+checkout alongside this project. From `tracks-dsp-proxy`, run:
+
+```bash
+bash ci/verify.sh
+```
+
+The script installs the shared library locally, then verifies the proxy.
+Set `DSP408_PROTOCOL_DIR` for another source location. For the same library
+source as the draft hosted build, use the exact commit recorded in
+[`ci/protocol-revision`](ci/protocol-revision). Then display help:
 
 ```bash
 java -jar target/dsp408-proxy-0.1.0-SNAPSHOT-all.jar --help
 ```
+
+## Automated verification draft
+
+The [draft GitHub Actions workflow](.github/workflows/verify.yml) prepares
+verification on pushes, pull requests and manual runs. It checks out
+`DoctorRemoteControl/dsp408-protocol` at the full commit SHA recorded in
+`ci/protocol-revision`, validates the SHA format and runs `ci/verify.sh` with
+Java 21 and a fresh temporary Maven repository. The actions themselves are
+pinned to full commits; no dependency cache or physical DSP is used.
+
+The planned source repository is `DoctorRemoteControl/dsp408-proxy`.
+Publication of both repositories, availability of the locked protocol commit
+and the first hosted run are still pending. A proxy clone alone does not
+include the protocol source or its Maven artifact. The workflow currently
+assumes readable protocol source without an additional secret; private
+cross-repository access needs separate authentication configuration. No Maven
+package is currently published here. Repository visibility and a license
+remain owner decisions.
+
+After a reviewed protocol update, publish its source commit and update
+`ci/protocol-revision` to that exact full SHA before verifying the consumer.
+Local `ci/verify.sh` builds the supplied source checkout, including local
+changes; it does not automatically fetch or enforce the hosted revision.
 
 ## Start for Raider
 
